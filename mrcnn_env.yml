@@ -236,4 +236,4 @@ dependencies:
     - widgetsnbextension==3.5.1
     - win32-setctime==1.0.3
     - wrapt==1.12.1
-prefix: C:\Users\genki\miniconda3\envs\mrcnn
+

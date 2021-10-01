@@ -46,7 +46,8 @@ from mrcnn.config import Config
 from mrcnn import model as modellib, utils
 
 # Path to trained weights file
-COCO_WEIGHTS_PATH = os.path.join(ROOT_DIR, "mask_rcnn_coco.h5")
+#COCO_WEIGHTS_PATH = os.path.join(ROOT_DIR, "mask_rcnn_coco.h5")
+COCO_WEIGHTS_PATH = os.path.join(ROOT_DIR, 'logs', 'drive20211001T0124', 'mask_rcnn_drive_0007.h5')
 
 # Directory to save logs and model checkpoints, if not provided
 # through the command line argument --logs
@@ -75,7 +76,7 @@ class DriveConfig(Config):
     STEPS_PER_EPOCH = 100
 
     # Skip detections with < 90% confidence
-    DETECTION_MIN_CONFIDENCE = 0.93
+    DETECTION_MIN_CONFIDENCE = 0.90
 
 
 ############################################################
@@ -93,6 +94,8 @@ class DriveDataset(utils.Dataset):
         self.add_class("drive", 1, "car")
         self.add_class("drive", 2, "truck")
         self.add_class("drive", 3, "bus")
+        
+        self.class_names = ['BG', 'car', 'truck', 'bus']
 
         # Train or validation dataset?
         assert subset in ["train", "val"]
@@ -129,9 +132,11 @@ class DriveDataset(utils.Dataset):
             # The if condition is needed to support VIA versions 1.x and 2.x.
             if type(a['regions']) is dict:
                 polygons = [r['shape_attributes'] for r in a['regions'].values()]
+                objects = [s['region_attributes'] for s in a['regions'].values()]
             else:
-                polygons = [r['shape_attributes'] for r in a['regions']] 
-
+                polygons = [r['shape_attributes'] for r in a['regions']]
+                objects = [s['region_attributes'] for s in a['regions']]
+            num_ids = [self.class_names.index(n['drive']) for n in objects]
             # load_mask() needs the image size to convert polygons to masks.
             # Unfortunately, VIA doesn't include it in JSON, so we must read
             # the image. This is only managable since the dataset is tiny.
@@ -144,7 +149,8 @@ class DriveDataset(utils.Dataset):
                 image_id=a['filename'],  # use file name as a unique image id
                 path=image_path,
                 width=width, height=height,
-                polygons=polygons)
+                polygons=polygons,
+                num_ids=num_ids)
 
     def load_mask(self, image_id):
         """Generate instance masks for an image.
@@ -154,13 +160,12 @@ class DriveDataset(utils.Dataset):
         class_ids: a 1D array of class IDs of the instance masks.
         """
         # If not a drive dataset image, delegate to parent class.
-        image_info = self.image_info[image_id]
-        if image_info["source"] != "drive":
+        info = self.image_info[image_id]
+        if info["source"] != "drive":
             return super(self.__class__, self).load_mask(image_id)
-
+        num_ids = info['num_ids']
         # Convert polygons to a bitmap mask of shape
         # [height, width, instance_count]
-        info = self.image_info[image_id]
         mask = np.zeros([info["height"], info["width"], len(info["polygons"])],
                         dtype=np.uint8)
         for i, p in enumerate(info["polygons"]):
@@ -170,7 +175,9 @@ class DriveDataset(utils.Dataset):
 
         # Return mask, and array of class IDs of each instance. Since we have
         # one class ID only, we return an array of 1s
-        return mask.astype(np.bool), np.ones([mask.shape[-1]], dtype=np.int32)
+        #return mask.astype(np.bool), np.ones([mask.shape[-1]], dtype=np.int32)
+        num_ids = np.array(num_ids, dtype=np.int32)
+        return mask, num_ids
 
     def image_reference(self, image_id):
         """Return the path of the image."""
@@ -205,7 +212,7 @@ def train(model):
     print("Training network heads")
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
-                epochs=20,
+                epochs=10,
                 layers='heads',
                 augmentation=augmentation)
 
